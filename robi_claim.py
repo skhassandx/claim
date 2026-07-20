@@ -1,9 +1,65 @@
 import requests
 import json
+import os
 
-def get_total_points(headers):
-    # Endpoint for fetching total loyalty points/coins balance
+TOKEN_FILE = "tokens.json"
+
+def load_tokens():
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r") as f:
+            return json.load(f)
+    return None
+
+def save_tokens(access_token, refresh_token):
+    with open(TOKEN_FILE, "w") as f:
+        json.dump({"accessToken": access_token, "refreshToken": refresh_token}, f, indent=4)
+    print("💾 Tokens saved successfully.")
+
+def get_headers(access_token):
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "Accept-Encoding": "gzip",
+        "User-Agent": "Robi/10.12.7/android/30/4g/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
+        "Accept-Language": "en",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Connection": "Keep-Alive"
+    }
+
+def refresh_access_token(refresh_token):
+    print("\n🔄 Access Token expired. Attempting to generate a new one...")
+    
+    # NOTE: This is the standard predicted endpoint for Robi refresh token.
+    url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
+    
+    headers = {
+        "User-Agent": "Robi/10.12.7/android/30/4g/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
+        "Accept-Language": "en",
+        "Content-Type": "application/json"
+    }
+    
+    payload = json.dumps({"refreshToken": refresh_token})
+    
+    try:
+        response = requests.post(url, headers=headers, data=payload)
+        if response.status_code in [200, 201]:
+            data = response.json()
+            new_access = data.get("data", {}).get("token", {}).get("accessToken")
+            new_refresh = data.get("data", {}).get("token", {}).get("refreshToken", refresh_token)
+            
+            if new_access:
+                print("✅ Token refreshed successfully!")
+                save_tokens(new_access, new_refresh)
+                return new_access
+        
+        print(f"❌ Token refresh failed. Status: {response.status_code}")
+        print("⚠️ Note: The exact Refresh API endpoint might be different. You may need to capture the exact URL.")
+    except Exception as e:
+        print(f"❌ Error refreshing token: {e}")
+    return None
+
+def get_total_points(access_token, refresh_token):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/loyalty-and-coin"
+    headers = get_headers(access_token)
     
     print("\n🔍 Fetching total points balance...")
     try:
@@ -11,34 +67,24 @@ def get_total_points(headers):
         
         if response.status_code == 200:
             data = response.json()
-            # Printing the JSON response properly formatted
             print("📊 Current Balance Details:")
             print(json.dumps(data, indent=2))
+            
         elif response.status_code == 401:
-            print("❌ Cannot fetch balance: JWT Token has expired.")
+            new_token = refresh_access_token(refresh_token)
+            if new_token:
+                get_total_points(new_token, refresh_token) # Retry with new token
         else:
-            print(f"❌ Failed to fetch balance. Status Code: {response.status_code}")
+            print(f"❌ Failed to fetch balance. Status: {response.status_code}")
     except Exception as e:
-        print(f"❌ Error fetching balance: {e}")
+        print(f"❌ Error: {e}")
 
-def claim_daily_points():
-    # Endpoint for claiming daily points
+def claim_daily_points(access_token, refresh_token):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/earn-coins"
-
-    # Headers with English Language Preference
-    headers = {
-        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiJkOTIxYTA2NS1lY2M3LTQ2YzAtOTU3ZS05MTA5OTY3YTAzOTAiLCJzdWIiOiIyNTI5NzgxMCIsImlsayI6Iis4ODAxODE4ODk2MTY2IiwicGF5dHlwZSI6InByZXBhaWQiLCJ0eXBlIjoiYWNjZXNzIiwiaXNzIjoicm9iaSIsImF1ZCI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzAwMCIsInBsdCI6ImFuZHJvaWQiLCJ2ZXIiOiIxMC4xMi43IiwiZW52IjoiZGV2ZWxvcG1lbnQiLCJ1c2VyVHlwZSI6ImJyYW5kIiwibWFya2V0U2VnbWVudCI6ImluZGl2aWR1YWwiLCJjcmVhdGVkQXQiOjE1ODE5NTQwNzEsImlzRW1wbG95ZWUiOmZhbHNlLCJtYWluUHJvZHVjdCI6MjYwLCJzaW1UeXBlIjoibm9ybWFsIiwiaWF0IjoxNzg0NTI0ODkyLCJleHAiOjE3ODQ2MTEyOTJ9.8bgHBpHPXUp__UmHpAcmAglsGBpfWdtWdDidlZDHIP8",
-        "Accept-Encoding": "gzip",
-        "User-Agent": "Robi/10.12.7/android/30/4g/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
-        "Accept-Language": "en", # Changed to 'en' for English server responses
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Connection": "Keep-Alive"
-    }
-
+    headers = get_headers(access_token)
     payload = "type=daily-check-in"
 
     print("🚀 Sending request to claim daily points...")
-    
     try:
         response = requests.post(url, headers=headers, data=payload)
         
@@ -50,26 +96,36 @@ def claim_daily_points():
         if response.status_code == 200 and response_data.get("status") == "success":
             coins = response_data.get("data", {}).get("coinsEarned", 0)
             print(f"✅ Success! You have earned {coins} points today.")
+            return True
             
         elif response.status_code == 400:
-            error_msg = response_data.get("error", {}).get("error", "Already claimed today or unknown error occurred.")
+            error_msg = response_data.get("error", {}).get("error", "Already claimed today.")
             print(f"⚠️ Notice: {error_msg}")
+            return True
             
         elif response.status_code == 401:
-            print("❌ Failed: Your JWT Token has expired! Please capture a new token and update the script.")
-            return # Stop execution so it doesn't try to fetch balance with an expired token
+            new_token = refresh_access_token(refresh_token)
+            if new_token:
+                return claim_daily_points(new_token, refresh_token) # Retry with new token
+            return False
             
         else:
             print(f"❌ Failed! Status Code: {response.status_code}")
-            print(f"Response: {response.text}")
+            return False
             
     except Exception as e:
         print(f"❌ An error occurred: {e}")
-        
-    print("-" * 40)
-    
-    # Trigger the function to show total points balance
-    get_total_points(headers)
+        return False
 
 if __name__ == "__main__":
-    claim_daily_points()
+    tokens = load_tokens()
+    
+    if not tokens or "accessToken" not in tokens:
+        print("❌ tokens.json file not found or invalid! Please create it.")
+    else:
+        access_token = tokens["accessToken"]
+        refresh_token = tokens["refreshToken"]
+        
+        claim_daily_points(access_token, refresh_token)
+        print("-" * 40)
+        get_total_points(access_token, refresh_token)
