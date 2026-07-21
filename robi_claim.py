@@ -1,6 +1,9 @@
 import requests
 import json
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 TOKEN_FILE = "tokens.json"
 
@@ -8,124 +11,136 @@ def load_tokens():
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE, "r") as f:
             return json.load(f)
-    return None
+    return []
 
-def save_tokens(access_token, refresh_token):
+def save_tokens(accounts):
     with open(TOKEN_FILE, "w") as f:
-        json.dump({"accessToken": access_token, "refreshToken": refresh_token}, f, indent=4)
-    print("💾 Tokens saved successfully.")
+        json.dump(accounts, f, indent=4)
+    print("💾 tokens.json file auto-updated successfully.")
 
 def get_headers(access_token):
     return {
         "Authorization": f"Bearer {access_token}",
         "Accept-Encoding": "gzip",
-        "User-Agent": "Robi/10.12.7/android/30/4g/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
+        "User-Agent": "Robi/10.12.7/android/30/WIFI/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
         "Accept-Language": "en",
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": "application/json; charset=utf-8",
         "Connection": "Keep-Alive"
     }
 
-def refresh_access_token(refresh_token):
-    print("\n🔄 Access Token expired. Attempting to generate a new one...")
-    
-    # NOTE: This is the standard predicted endpoint for Robi refresh token.
+def refresh_access_token(account):
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
-    
     headers = {
-        "User-Agent": "Robi/10.12.7/android/30/4g/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
+        "User-Agent": "Robi/10.12.7/android/30/WIFI/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
         "Accept-Language": "en",
         "Content-Type": "application/json"
     }
-    
-    payload = json.dumps({"refreshToken": refresh_token})
+    payload = json.dumps({"refreshToken": account.get("refreshToken")})
     
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code in [200, 201]:
             data = response.json()
             new_access = data.get("data", {}).get("token", {}).get("accessToken")
-            new_refresh = data.get("data", {}).get("token", {}).get("refreshToken", refresh_token)
-            
+            new_refresh = data.get("data", {}).get("token", {}).get("refreshToken", account.get("refreshToken"))
             if new_access:
-                print("✅ Token refreshed successfully!")
-                save_tokens(new_access, new_refresh)
-                return new_access
-        
-        print(f"❌ Token refresh failed. Status: {response.status_code}")
-        print("⚠️ Note: The exact Refresh API endpoint might be different. You may need to capture the exact URL.")
+                account["accessToken"] = new_access
+                account["refreshToken"] = new_refresh
+                return True
     except Exception as e:
-        print(f"❌ Error refreshing token: {e}")
-    return None
+        pass
+    return False
 
-def get_total_points(access_token, refresh_token):
+def get_total_points(account):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/loyalty-and-coin"
-    headers = get_headers(access_token)
-    
-    print("\n🔍 Fetching total points balance...")
     try:
-        response = requests.get(url, headers=headers)
-        
+        response = requests.get(url, headers=get_headers(account["accessToken"]))
         if response.status_code == 200:
-            data = response.json()
-            print("📊 Current Balance Details:")
-            print(json.dumps(data, indent=2))
-            
+            return response.json().get("data", {}).get("totalPoints", "Unknown"), False
         elif response.status_code == 401:
-            new_token = refresh_access_token(refresh_token)
-            if new_token:
-                get_total_points(new_token, refresh_token) # Retry with new token
-        else:
-            print(f"❌ Failed to fetch balance. Status: {response.status_code}")
+            return None, True
     except Exception as e:
-        print(f"❌ Error: {e}")
+        pass
+    return "Error", False
 
-def claim_daily_points(access_token, refresh_token):
+def claim_daily_points(account):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/earn-coins"
-    headers = get_headers(access_token)
-    payload = "type=daily-check-in"
-
-    print("🚀 Sending request to claim daily points...")
+    payload = json.dumps({"type": "daily-check-in"})
     try:
-        response = requests.post(url, headers=headers, data=payload)
-        
-        try:
-            response_data = response.json()
-        except:
-            response_data = {}
-
+        response = requests.post(url, headers=get_headers(account["accessToken"]), data=payload)
+        response_data = response.json() if response.text else {}
         if response.status_code == 200 and response_data.get("status") == "success":
-            coins = response_data.get("data", {}).get("coinsEarned", 0)
-            print(f"✅ Success! You have earned {coins} points today.")
-            return True
-            
+            return response_data.get("data", {}).get("coinsEarned", 0), "Success", False
         elif response.status_code == 400:
-            error_msg = response_data.get("error", {}).get("error", "Already claimed today.")
-            print(f"⚠️ Notice: {error_msg}")
-            return True
-            
+            return 0, "Already Claimed", False
         elif response.status_code == 401:
-            new_token = refresh_access_token(refresh_token)
-            if new_token:
-                return claim_daily_points(new_token, refresh_token) # Retry with new token
-            return False
-            
-        else:
-            print(f"❌ Failed! Status Code: {response.status_code}")
-            return False
-            
+            return 0, "Failed", True
     except Exception as e:
-        print(f"❌ An error occurred: {e}")
-        return False
+        return 0, f"Error: {e}", False
+    return 0, f"Failed ({response.status_code})", False
+
+def send_email_report(summary_text):
+    sender_email = os.environ.get("EMAIL_USER")
+    sender_password = os.environ.get("EMAIL_PASS")
+    receiver_email = "hassanalmamundx00@gmail.com"
+
+    if not sender_email or not sender_password:
+        print("⚠️ Email credentials not found in GitHub Secrets. Skipping email.")
+        return
+
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = "✅ Robi Auto Point Claim Report"
+    msg.attach(MIMEText(summary_text, 'plain'))
+
+    try:
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, msg.as_string())
+        server.quit()
+        print("📧 Email report sent successfully to hassanalmamundx00@gmail.com!")
+    except Exception as e:
+        print(f"❌ Failed to send email: {e}")
+
+def main():
+    accounts = load_tokens()
+    if not accounts:
+        print("❌ tokens.json is empty!")
+        return
+
+    tokens_updated = False
+    email_summary = "Robi Daily Points Execution Report:\n\n"
+
+    for index, account in enumerate(accounts):
+        phone = account.get("phone", f"Account {index+1}")
+        print(f"\n📱 Processing Number: {phone}")
+        
+        # Point Claim
+        earned, msg, needs_refresh = claim_daily_points(account)
+        if needs_refresh:
+            if refresh_access_token(account):
+                tokens_updated = True
+                earned, msg, _ = claim_daily_points(account)
+            else:
+                msg = "Token Refresh Failed"
+                
+        # Total Balance
+        total, needs_refresh = get_total_points(account)
+        if needs_refresh:
+             if refresh_access_token(account):
+                 tokens_updated = True
+                 total, _ = get_total_points(account)
+        
+        report_line = f"[{phone}] - Earned: {earned} ({msg}) | Total Balance: {total} Points\n"
+        print(report_line.strip())
+        email_summary += report_line
+
+    if tokens_updated:
+        save_tokens(accounts)
+        email_summary += "\n🔄 Note: Some access tokens were successfully refreshed today."
+
+    send_email_report(email_summary)
 
 if __name__ == "__main__":
-    tokens = load_tokens()
-    
-    if not tokens or "accessToken" not in tokens:
-        print("❌ tokens.json file not found or invalid! Please create it.")
-    else:
-        access_token = tokens["accessToken"]
-        refresh_token = tokens["refreshToken"]
-        
-        claim_daily_points(access_token, refresh_token)
-        print("-" * 40)
-        get_total_points(access_token, refresh_token)
+    main()
