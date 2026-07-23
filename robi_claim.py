@@ -18,32 +18,44 @@ def save_tokens(accounts):
         json.dump(accounts, f, indent=4)
     print("💾 tokens.json file auto-updated successfully.")
 
-def get_headers(account, access_token=None):
+def get_headers(account, access_token=None, is_urlencoded=False):
+    # User-Agent fallback
+    ua = account.get("userAgent", "Robi/10.12.7/android/30/WIFI/b9a78a8dc8ccac9c/WALTON_Primo H10/c15a12e8e7cbd416cf0264139b9e88e3")
+    
     headers = {
         "Accept-Encoding": "gzip",
-        "User-Agent": account.get("userAgent", "Robi/10.12.7/android/30/WIFI/b9a78a8dc8ccac9c/WALTON_Primo H10/c15a12e8e7cbd416cf0264139b9e88e3"),
+        "User-Agent": ua.strip(),
         "Accept-Language": "en",
-        "Content-Type": "application/json; charset=UTF-8",
         "Host": "myrobi-prod.robi.com.bd",
         "Connection": "Keep-Alive"
     }
+    
+    # অ্যাপের মত হুবহু Content-Type সেট করা
+    if is_urlencoded:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    else:
+        headers["Content-Type"] = "application/json; charset=UTF-8"
+        
     if access_token:
-        headers["Authorization"] = f"Bearer {access_token}"
+        # .strip() ফাংশন কপি-পেস্টের যেকোনো স্পেস বা এন্টার মুছে ফেলবে
+        headers["Authorization"] = f"Bearer {access_token.strip()}"
+        
     return headers
 
 def refresh_access_token(account):
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
-    headers = get_headers(account)
-    headers["Authorization"] = f"Bearer {account.get('refreshToken')}"
+    headers = get_headers(account, is_urlencoded=False)
     
-    payload = json.dumps({"refreshToken": account.get("refreshToken")})
+    refresh_token = account.get("refreshToken", "").strip()
+    headers["Authorization"] = f"Bearer {refresh_token}"
+    payload = json.dumps({"refreshToken": refresh_token})
     
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code in [200, 201]:
             data = response.json()
             new_access = data.get("data", {}).get("token", {}).get("accessToken")
-            new_refresh = data.get("data", {}).get("token", {}).get("refreshToken", account.get("refreshToken"))
+            new_refresh = data.get("data", {}).get("token", {}).get("refreshToken", refresh_token)
             
             if new_access:
                 account["accessToken"] = new_access
@@ -60,7 +72,7 @@ def refresh_access_token(account):
 def get_total_points(account):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/loyalty-and-coin"
     try:
-        response = requests.get(url, headers=get_headers(account, account["accessToken"]))
+        response = requests.get(url, headers=get_headers(account, account.get("accessToken")))
         if response.status_code == 200:
             return response.json().get("data", {}).get("totalPoints", "Unknown"), False
         elif response.status_code == 401:
@@ -71,9 +83,12 @@ def get_total_points(account):
 
 def claim_daily_points(account):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/earn-coins"
-    payload = json.dumps({"type": "daily-check-in"})
+    # হুবহু অ্যাপের মত urlencoded রিকোয়েস্ট তৈরি করা
+    headers = get_headers(account, account.get("accessToken"), is_urlencoded=True)
+    payload = "type=daily-check-in"
+    
     try:
-        response = requests.post(url, headers=get_headers(account, account["accessToken"]), data=payload)
+        response = requests.post(url, headers=headers, data=payload)
         response_data = response.json() if response.text else {}
         
         if response.status_code in [200, 201] and response_data.get("status") == "success":
@@ -123,7 +138,6 @@ def main():
         phone = account.get("phone", f"Account {index+1}")
         print(f"\n📱 Processing Number: {phone}")
         
-        # 1. Point Claim Process
         earned, msg, needs_refresh = claim_daily_points(account)
         if needs_refresh:
             print("🔄 Access Token expired. Attempting to refresh...")
@@ -133,7 +147,6 @@ def main():
             else:
                 msg = "Token Refresh Failed"
                 
-        # 2. Total Balance Check
         total, needs_refresh = get_total_points(account)
         if needs_refresh:
             print("🔄 Access Token expired during balance check. Attempting to refresh...")
@@ -145,7 +158,6 @@ def main():
         print(report_line.strip())
         email_summary += report_line
 
-    # 3. Save new tokens back to the JSON file if any refresh happened
     if tokens_updated:
         save_tokens(accounts)
         email_summary += "\n🔄 Note: Access tokens were successfully auto-refreshed today."
