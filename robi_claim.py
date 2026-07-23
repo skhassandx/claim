@@ -31,6 +31,7 @@ def get_headers(access_token):
 def refresh_access_token(account):
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
     headers = {
+        "Authorization": f"Bearer {account.get('refreshToken')}",
         "User-Agent": "Robi/10.12.7/android/30/WIFI/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
         "Accept-Language": "en",
         "Content-Type": "application/json"
@@ -42,13 +43,19 @@ def refresh_access_token(account):
         if response.status_code in [200, 201]:
             data = response.json()
             new_access = data.get("data", {}).get("token", {}).get("accessToken")
+            # নতুন রিফ্রেশ টোকেন না দিলে পুরনোটিই রেখে দেবে
             new_refresh = data.get("data", {}).get("token", {}).get("refreshToken", account.get("refreshToken"))
+            
             if new_access:
                 account["accessToken"] = new_access
                 account["refreshToken"] = new_refresh
+                print("✅ Token refreshed successfully! The file will be updated.")
                 return True
+        else:
+            print(f"⚠️ Refresh Failed! Server response: {response.status_code} - {response.text}")
     except Exception as e:
-        pass
+        print(f"❌ Critical error during token refresh: {e}")
+        
     return False
 
 def get_total_points(account):
