@@ -1,8 +1,6 @@
 name: Robi Daily Point Claim
 
 on:
-  schedule:
-    - cron: '19 00 * * *'
   workflow_dispatch:
 
 permissions:
