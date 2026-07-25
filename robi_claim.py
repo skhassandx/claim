@@ -19,7 +19,6 @@ def save_tokens(accounts):
     print("💾 tokens.json file auto-updated successfully.")
 
 def get_headers(account, access_token=None, is_urlencoded=False):
-    # User-Agent fallback
     ua = account.get("userAgent", "Robi/10.12.7/android/30/WIFI/b9a78a8dc8ccac9c/WALTON_Primo H10/c15a12e8e7cbd416cf0264139b9e88e3")
     
     headers = {
@@ -30,24 +29,22 @@ def get_headers(account, access_token=None, is_urlencoded=False):
         "Connection": "Keep-Alive"
     }
     
-    # অ্যাপের মত হুবহু Content-Type সেট করা
     if is_urlencoded:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     else:
         headers["Content-Type"] = "application/json; charset=UTF-8"
         
     if access_token:
-        # .strip() ফাংশন কপি-পেস্টের যেকোনো স্পেস বা এন্টার মুছে ফেলবে
         headers["Authorization"] = f"Bearer {access_token.strip()}"
         
     return headers
 
 def refresh_access_token(account):
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
-    headers = get_headers(account, is_urlencoded=False)
+    # ফিক্সড: রিফ্রেশ করার সময় হেডারে পুরনো Access Token পাঠাতে হবে
+    headers = get_headers(account, account.get("accessToken"), is_urlencoded=False)
     
     refresh_token = account.get("refreshToken", "").strip()
-    headers["Authorization"] = f"Bearer {refresh_token}"
     payload = json.dumps({"refreshToken": refresh_token})
     
     try:
@@ -83,7 +80,6 @@ def get_total_points(account):
 
 def claim_daily_points(account):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/earn-coins"
-    # হুবহু অ্যাপের মত urlencoded রিকোয়েস্ট তৈরি করা
     headers = get_headers(account, account.get("accessToken"), is_urlencoded=True)
     payload = "type=daily-check-in"
     
