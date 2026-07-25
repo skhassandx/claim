@@ -41,11 +41,23 @@ def get_headers(account, access_token=None, is_urlencoded=False):
 
 def refresh_access_token(account):
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
-    # ফিক্সড: রিফ্রেশ করার সময় হেডারে পুরনো Access Token পাঠাতে হবে
-    headers = get_headers(account, account.get("accessToken"), is_urlencoded=False)
+    
+    # ফিক্স ১: অ্যাপের মত হুবহু হেডার, কোনো Authorization Bearer থাকবে না
+    ua = account.get("userAgent", "Robi/10.12.7/android/30/WIFI/b9a78a8dc8ccac9c/WALTON_Primo H10/c15a12e8e7cbd416cf0264139b9e88e3")
+    headers = {
+        "Cache-Control": "no-cache",
+        "Accept-Encoding": "gzip",
+        "User-Agent": ua.strip(),
+        "Accept-Language": "en",
+        "Content-Type": "application/json; charset=utf-8",
+        "Host": "myrobi-prod.robi.com.bd",
+        "Connection": "Keep-Alive"
+    }
     
     refresh_token = account.get("refreshToken", "").strip()
-    payload = json.dumps({"refreshToken": refresh_token})
+    
+    # ফিক্স ২: পেলোডে হুবহু অ্যাপের মত "refresh_token" (আন্ডারস্কোর সহ) ব্যবহার করা
+    payload = json.dumps({"refresh_token": refresh_token})
     
     try:
         response = requests.post(url, headers=headers, data=payload)
