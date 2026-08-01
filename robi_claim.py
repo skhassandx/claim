@@ -17,25 +17,34 @@ def save_tokens(accounts):
         json.dump(accounts, f, indent=4)
     print("💾 tokens.json file auto-updated successfully.")
 
-def get_headers(access_token):
-    return {
-        "Authorization": f"Bearer {access_token}",
+def get_headers(access_token=None, is_urlencoded=False):
+    headers = {
         "Accept-Encoding": "gzip",
         "User-Agent": "Robi/10.12.7/android/30/WIFI/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
         "Accept-Language": "en",
-        "Content-Type": "application/json; charset=utf-8",
         "Connection": "Keep-Alive"
     }
+    
+    if is_urlencoded:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    else:
+        headers["Content-Type"] = "application/json; charset=utf-8"
+        
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+        
+    return headers
 
 def refresh_access_token(account):
     print(f"🔄 Access Token expired for {account.get('phone', 'Unknown')}. Attempting to refresh...")
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
-    headers = {
-        "User-Agent": "Robi/10.12.7/android/30/WIFI/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
-        "Accept-Language": "en",
-        "Content-Type": "application/json"
-    }
-    payload = json.dumps({"refreshToken": account.get("refreshToken")})
+    
+    # রিফ্রেশ করার সময় Authorization হেডার যাবে না, শুধু সাধারণ হেডার যাবে
+    headers = get_headers(access_token=None)
+    
+    # 🚨 ফিক্স: পেলোডে অবশ্যই "refresh_token" (আন্ডারস্কোর সহ) থাকতে হবে
+    payload = json.dumps({"refresh_token": account.get("refreshToken", "").strip()})
+    
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code in [200, 201]:
@@ -47,7 +56,8 @@ def refresh_access_token(account):
                 account["accessToken"] = new_access
                 account["refreshToken"] = new_refresh
                 return True
-        print(f"❌ Token refresh failed. Status: {response.status_code}")
+        else:
+            print(f"❌ Token refresh failed. Status: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"❌ Error refreshing token: {e}")
     return False
@@ -71,12 +81,17 @@ def get_total_points(account):
 
 def claim_daily_points(account):
     url = "https://myrobi-prod.robi.com.bd/loyalty/loyalty/api/v1/earn-coins"
-    payload = json.dumps({"type": "daily-check-in"})
+    
+    # 🚨 ফিক্স: পেলোড URL-encoded হতে হবে, JSON নয়
+    payload = "type=daily-check-in"
+    headers = get_headers(account["accessToken"], is_urlencoded=True)
+    
     print("🚀 Sending request to claim daily points...")
     try:
-        response = requests.post(url, headers=get_headers(account["accessToken"]), data=payload)
+        response = requests.post(url, headers=headers, data=payload)
         response_data = response.json() if response.text else {}
-        if response.status_code == 200 and response_data.get("status") == "success":
+        
+        if response.status_code in [200, 201] and response_data.get("status") == "success":
             coins = response_data.get("data", {}).get("coinsEarned", 0)
             print(f"✅ Success! Earned {coins} points today.")
             return True, False
@@ -104,10 +119,11 @@ def main():
         phone = account.get("phone", f"Account {index+1}")
         print(f"\n{'='*40}\n📱 Processing Number: {phone}\n{'='*40}")
         
-        # ⏳ রেনডম ডিলে (Random Delay) যুক্ত করা হলো
-        delay_seconds = random.randint(30, 300)
-        print(f"⏳ Anti-Bot Delay: Waiting for {delay_seconds} seconds before processing...")
-        time.sleep(delay_seconds)
+        # ⏳ 🚨 ফিক্স: অ্যান্টি-বট ডিলে ৫ থেকে ১৫ সেকেন্ড করা হলো (GitHub টাইমআউট এড়াতে)
+        if index > 0:
+            delay_seconds = random.randint(5, 60)
+            print(f"⏳ Anti-Bot Delay: Waiting for {delay_seconds} seconds before processing next account...")
+            time.sleep(delay_seconds)
         
         success, needs_refresh = claim_daily_points(account)
         if needs_refresh:
