@@ -70,10 +70,31 @@ def get_total_points(account, log_lines):
         response = requests.get(url, headers=get_headers(account["accessToken"]))
         if response.status_code == 200:
             data = response.json()
-            total_points = data.get("data", {}).get("totalPoints", "Unknown")
+            inner = data.get("data", {})
+            total_points = inner.get("totalPoints", "Unknown")
             msg = f"📊 Current Balance: {total_points} Points"
             print(msg)
             log_lines.append(msg)
+
+            # 🔍 লেভেল/টায়ার (যেমন "Select Elite") common field name গুলো চেক করা হচ্ছে
+            tier_value = None
+            for key in ["tier", "level", "segment", "loyaltyTier", "tierName",
+                        "customerTier", "membershipTier", "rank", "userTier"]:
+                if key in inner and inner.get(key):
+                    tier_value = inner.get(key)
+                    break
+
+            if tier_value:
+                tier_msg = f"🏅 Tier/Level: {tier_value}"
+                print(tier_msg)
+                log_lines.append(tier_msg)
+            else:
+                # কোনো পরিচিত ফিল্ড না পেলে, পুরো response log-এ রাখা হচ্ছে
+                # যাতে পরে দেখে সঠিক field name বের করা যায়
+                debug_msg = f"ℹ️ Tier field not found. Raw response: {json.dumps(inner)}"
+                print(debug_msg)
+                log_lines.append(debug_msg)
+
             return True, False
         elif response.status_code == 401:
             return False, True
@@ -126,6 +147,8 @@ def claim_daily_points(account, log_lines):
 def send_email_notification(subject, body):
     email_user = os.environ.get("EMAIL_USER")
     email_pass = os.environ.get("EMAIL_PASS")
+    # EMAIL_TO সেট না থাকলে EMAIL_USER-কেই ডিফল্ট হিসেবে ব্যবহার করবে (নিজেকে নিজে পাঠানো)
+    email_to = os.environ.get("EMAIL_TO", email_user)
 
     if not email_user or not email_pass:
         print("⚠️ EMAIL_USER / EMAIL_PASS not set. Skipping email notification.")
@@ -134,14 +157,14 @@ def send_email_notification(subject, body):
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = subject
     msg["From"] = email_user
-    msg["To"] = email_user  # নিজেকেই পাঠানো হচ্ছে
+    msg["To"] = email_to
 
     try:
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(email_user, email_pass)
-            server.sendmail(email_user, [email_user], msg.as_string())
-        print("📧 Email notification sent successfully!")
+            server.sendmail(email_user, [email_to], msg.as_string())
+        print(f"📧 Email notification sent successfully to {email_to}!")
     except Exception as e:
         print(f"❌ Failed to send email notification: {e}")
 
