@@ -71,29 +71,23 @@ def get_total_points(account, log_lines):
         if response.status_code == 200:
             data = response.json()
             inner = data.get("data", {})
+
             total_points = inner.get("totalPoints", "Unknown")
+            tier = inner.get("loyaltyCategoryTitle", "Unknown")
+            points_today = inner.get("pointsEarnedToday", 0)
+            tier_expiry = inner.get("expiry", "Unknown")
+            points_expiry = inner.get("nearestExpirationTime", "Unknown")
+            points_expiring_soon = inner.get("nearestExpirationPointSum", 0)
+
             msg = f"📊 Current Balance: {total_points} Points"
-            print(msg)
-            log_lines.append(msg)
+            tier_msg = f"🏅 Tier: {tier}"
+            earned_msg = f"➕ Points Earned Today: {points_today}"
+            tier_expiry_msg = f"📅 Tier Validity: {tier_expiry}"
+            points_expiry_msg = f"⏳ Next Points Expiry: {points_expiring_soon} points on {points_expiry}"
 
-            # 🔍 লেভেল/টায়ার (যেমন "Select Elite") common field name গুলো চেক করা হচ্ছে
-            tier_value = None
-            for key in ["tier", "level", "segment", "loyaltyTier", "tierName",
-                        "customerTier", "membershipTier", "rank", "userTier"]:
-                if key in inner and inner.get(key):
-                    tier_value = inner.get(key)
-                    break
-
-            if tier_value:
-                tier_msg = f"🏅 Tier/Level: {tier_value}"
-                print(tier_msg)
-                log_lines.append(tier_msg)
-            else:
-                # কোনো পরিচিত ফিল্ড না পেলে, পুরো response log-এ রাখা হচ্ছে
-                # যাতে পরে দেখে সঠিক field name বের করা যায়
-                debug_msg = f"ℹ️ Tier field not found. Raw response: {json.dumps(inner)}"
-                print(debug_msg)
-                log_lines.append(debug_msg)
+            for line in [msg, tier_msg, earned_msg, tier_expiry_msg, points_expiry_msg]:
+                print(line)
+                log_lines.append(line)
 
             return True, False
         elif response.status_code == 401:
