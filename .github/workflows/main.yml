@@ -29,7 +29,7 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: python robi_claim.py
+        run: python robi_claim_refactored.py
 
       - name: Commit and push updated tokens
         run: |
