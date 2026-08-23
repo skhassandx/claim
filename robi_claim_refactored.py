@@ -66,9 +66,9 @@ def save_tokens(accounts):
 
 
 def get_headers(access_token=None, is_urlencoded=False):
-    # সাধারণ, স্বচ্ছ হেডার — কোনো ডিভাইস/অ্যাপ স্পুফিং নেই
     headers = {
         "Accept-Encoding": "gzip",
+        "User-Agent": "Robi/10.12.7/android/30/WIFI/fa5ad50d15f996fc/WALTON_Primo H10/e6c3e076dbf731536666add7f9a418da",
         "Accept-Language": "en",
         "Connection": "Keep-Alive",
     }
