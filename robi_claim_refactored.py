@@ -123,6 +123,7 @@ def get_total_points(account):
             log("info", f"[{phone}] বর্তমান ব্যালেন্স: {total_points} Points")
             return True, False
         elif response.status_code == 401:
+            log("warning", f"[{phone}] Balance check-এ 401 (unauthorized)। Response: {response.text[:200]}")
             return False, True
         else:
             log("error", f"[{phone}] ব্যালেন্স আনতে ব্যর্থ। Status: {response.status_code}")
@@ -152,6 +153,7 @@ def claim_daily_points(account):
             log("warning", f"[{phone}] নোটিস: {error_msg}")
             return True, False
         elif response.status_code == 401:
+            log("warning", f"[{phone}] Claim-এ 401 (unauthorized)। Response: {response.text[:200]}")
             return False, True
         else:
             log("error", f"[{phone}] ব্যর্থ! Status Code: {response.status_code}")
@@ -162,21 +164,30 @@ def claim_daily_points(account):
 
 def process_account(account):
     """একটা অ্যাকাউন্টের জন্য claim + balance check, দরকার হলে token refresh সহ।"""
+    phone = account.get("phone", "Unknown")
     token_refreshed = False
 
     success, needs_refresh = claim_daily_points(account)
     if needs_refresh:
         if refresh_access_token(account):
             token_refreshed = True
-            claim_daily_points(account)
+            time.sleep(2)  # refresh-এর পর সাথে সাথে না পাঠিয়ে সামান্য গ্যাপ
+            success, needs_refresh = claim_daily_points(account)
+            if needs_refresh:
+                log("error", f"[{phone}] Token রিফ্রেশের পরও claim-এ 401 — আরও গভীর সমস্যা থাকতে পারে (token blacklist/account issue), তদন্ত দরকার।")
         else:
             return token_refreshed  # refresh ব্যর্থ হলে এই অ্যাকাউন্টের বাকি কাজ স্কিপ
+
+    time.sleep(2)  # claim ও balance check-এর মাঝে সামান্য গ্যাপ
 
     success, needs_refresh = get_total_points(account)
     if needs_refresh:
         if refresh_access_token(account):
             token_refreshed = True
-            get_total_points(account)
+            time.sleep(2)
+            success, needs_refresh = get_total_points(account)
+            if needs_refresh:
+                log("error", f"[{phone}] Token রিফ্রেশের পরও balance check-এ 401 — আরও গভীর সমস্যা থাকতে পারে (token blacklist/account issue), তদন্ত দরকার।")
 
     return token_refreshed
 
