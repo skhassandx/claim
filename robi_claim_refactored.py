@@ -174,6 +174,35 @@ def claim_daily_points(account):
     return False, False
 
 
+def check_main_balance(account):
+    """
+    Diagnostic ফাংশন: main balance endpoint-এর পুরো raw response দেখায়,
+    যাতে সঠিক field names (mainBalance, dataVolume ইত্যাদি) শনাক্ত করা যায়।
+    ফিল্ড নাম কনফার্ম হওয়ার পর এটাকে ক্লিন আউটপুটে রূপান্তর করা হবে।
+    """
+    phone = account.get("phone", "Unknown")
+    url = "https://myrobi-prod.robi.com.bd/account/api/v1/balance"
+
+    try:
+        response = requests.get(url, headers=get_headers(account["accessToken"]), timeout=15)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                pretty = json.dumps(data, indent=2, ensure_ascii=False)
+            except ValueError:
+                pretty = response.text
+            log("info", f"[{phone}] Main Balance RAW RESPONSE:\n{pretty}")
+            return True, False
+        elif response.status_code == 401:
+            log("warning", f"[{phone}] Main balance-এ 401 (unauthorized)। Response: {response.text[:200]}")
+            return False, True
+        else:
+            log("error", f"[{phone}] Main balance আনতে ব্যর্থ। Status: {response.status_code} - {response.text[:200]}")
+    except requests.RequestException as e:
+        log("error", f"[{phone}] নেটওয়ার্ক এরর: {e}")
+    return False, False
+
+
 def process_account(account):
     """একটা অ্যাকাউন্টের জন্য claim + balance check, দরকার হলে token refresh সহ।"""
     phone = account.get("phone", "Unknown")
@@ -201,6 +230,15 @@ def process_account(account):
             success, needs_refresh = get_total_points(account)
             if needs_refresh:
                 log("error", f"[{phone}] Token রিফ্রেশের পরও balance check-এ 401 — আরও গভীর সমস্যা থাকতে পারে (token blacklist/account issue), তদন্ত দরকার।")
+
+    time.sleep(2)  # main balance check-এর আগে সামান্য গ্যাপ
+
+    success, needs_refresh = check_main_balance(account)
+    if needs_refresh:
+        if refresh_access_token(account):
+            token_refreshed = True
+            time.sleep(2)
+            check_main_balance(account)
 
     return token_refreshed
 
