@@ -119,8 +119,20 @@ def get_total_points(account):
         response = requests.get(url, headers=get_headers(account["accessToken"]), timeout=15)
         if response.status_code == 200:
             data = response.json()
-            total_points = data.get("data", {}).get("totalPoints", "Unknown")
+            inner = data.get("data", {})
+
+            total_points = inner.get("totalPoints", "Unknown")
+            tier = inner.get("loyaltyCategoryTitle", "Unknown")
+            points_today = inner.get("pointsEarnedToday", 0)
+            tier_expiry = inner.get("expiry", "Unknown")
+            points_expiry = inner.get("nearestExpirationTime", "Unknown")
+            points_expiring_soon = inner.get("nearestExpirationPointSum", 0)
+
             log("info", f"[{phone}] বর্তমান ব্যালেন্স: {total_points} Points")
+            log("info", f"[{phone}] Tier: {tier}")
+            log("info", f"[{phone}] Points Earned Today: {points_today}")
+            log("info", f"[{phone}] Tier Validity: {tier_expiry}")
+            log("info", f"[{phone}] Next Points Expiry: {points_expiring_soon} points on {points_expiry}")
             return True, False
         elif response.status_code == 401:
             log("warning", f"[{phone}] Balance check-এ 401 (unauthorized)। Response: {response.text[:200]}")
@@ -176,6 +188,7 @@ def process_account(account):
             if needs_refresh:
                 log("error", f"[{phone}] Token রিফ্রেশের পরও claim-এ 401 — আরও গভীর সমস্যা থাকতে পারে (token blacklist/account issue), তদন্ত দরকার।")
         else:
+            log("error", f"[{phone}] Token রিফ্রেশ ব্যর্থ হয়েছে। এই অ্যাকাউন্ট স্কিপ করা হলো।")
             return token_refreshed  # refresh ব্যর্থ হলে এই অ্যাকাউন্টের বাকি কাজ স্কিপ
 
     time.sleep(2)  # claim ও balance check-এর মাঝে সামান্য গ্যাপ
