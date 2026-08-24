@@ -8,8 +8,8 @@ import smtplib
 from email.mime.text import MIMEText
 
 TOKEN_FILE = "tokens.json"
-MIN_DELAY_SECONDS = 5   # অ্যাকাউন্টগুলোর মাঝে ন্যূনতম গ্যাপ
-MAX_DELAY_SECONDS = 60  # নেটওয়ার্ক স্পিড ভ্যারিয়েশন ও Robi সার্ভারের rate-limit এড়াতে সর্বোচ্চ গ্যাপ
+MIN_DELAY_SECONDS = 5   # accounts-এর মাঝে ন্যূনতম গ্যাপ
+MAX_DELAY_SECONDS = 60  # নেটওয়ার্ক স্পিড ভ্যারিয়েশন ও rate-limit এড়াতে সর্বোচ্চ গ্যাপ
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +34,7 @@ def send_email_notification(subject, body):
     email_to = os.environ.get("EMAIL_TO", email_user)  # EMAIL_TO না থাকলে নিজেকেই পাঠাবে
 
     if not email_user or not email_pass:
-        logger.warning("EMAIL_USER / EMAIL_PASS সেট করা নেই। ইমেইল নোটিফিকেশন স্কিপ করা হলো।")
+        logger.warning("EMAIL_USER / EMAIL_PASS not set. Skipping email notification.")
         return
 
     msg = MIMEText(body, "plain", "utf-8")
@@ -47,9 +47,9 @@ def send_email_notification(subject, body):
             server.starttls()
             server.login(email_user, email_pass)
             server.sendmail(email_user, [email_to], msg.as_string())
-        logger.info(f"ইমেইল সফলভাবে পাঠানো হয়েছে: {email_to}")
+        logger.info(f"Email sent successfully to {email_to}")
     except Exception as e:
-        logger.error(f"ইমেইল পাঠাতে ব্যর্থ: {e}")
+        logger.error(f"Failed to send email: {e}")
 
 
 def load_tokens():
@@ -62,7 +62,7 @@ def load_tokens():
 def save_tokens(accounts):
     with open(TOKEN_FILE, "w") as f:
         json.dump(accounts, f, indent=4)
-    log("info", "tokens.json ফাইল আপডেট করা হয়েছে।")
+    log("info", "tokens.json file updated successfully.")
 
 
 def get_headers(access_token=None, is_urlencoded=False):
@@ -86,7 +86,7 @@ def get_headers(access_token=None, is_urlencoded=False):
 
 def refresh_access_token(account):
     phone = account.get("phone", "Unknown")
-    log("info", f"[{phone}] Access token রিফ্রেশ করার চেষ্টা করা হচ্ছে...")
+    log("info", f"[{phone}] Attempting to refresh access token...")
     url = "https://myrobi-prod.robi.com.bd/api/v1/customer/auth/refresh"
 
     headers = get_headers(access_token=None)
@@ -100,15 +100,15 @@ def refresh_access_token(account):
             new_access = token_data.get("accessToken")
             new_refresh = token_data.get("refreshToken", account.get("refreshToken"))
             if new_access:
-                log("info", f"[{phone}] Token রিফ্রেশ সফল হয়েছে।")
+                log("info", f"[{phone}] Token refreshed successfully!")
                 account["accessToken"] = new_access
                 account["refreshToken"] = new_refresh
                 return True
-        log("error", f"[{phone}] Token রিফ্রেশ ব্যর্থ। Status: {response.status_code} - {response.text}")
+        log("error", f"[{phone}] Token refresh failed. Status: {response.status_code} - {response.text}")
     except requests.RequestException as e:
-        log("error", f"[{phone}] Token রিফ্রেশ করার সময় নেটওয়ার্ক এরর: {e}")
+        log("error", f"[{phone}] Network error while refreshing token: {e}")
     except Exception as e:
-        log("error", f"[{phone}] Token রিফ্রেশ করার সময় অপ্রত্যাশিত এরর: {e}")
+        log("error", f"[{phone}] Unexpected error while refreshing token: {e}")
     return False
 
 
@@ -128,19 +128,19 @@ def get_total_points(account):
             points_expiry = inner.get("nearestExpirationTime", "Unknown")
             points_expiring_soon = inner.get("nearestExpirationPointSum", 0)
 
-            log("info", f"[{phone}] বর্তমান ব্যালেন্স: {total_points} Points")
+            log("info", f"[{phone}] Current Balance: {total_points} Points")
             log("info", f"[{phone}] Tier: {tier}")
             log("info", f"[{phone}] Points Earned Today: {points_today}")
             log("info", f"[{phone}] Tier Validity: {tier_expiry}")
             log("info", f"[{phone}] Next Points Expiry: {points_expiring_soon} points on {points_expiry}")
             return True, False
         elif response.status_code == 401:
-            log("warning", f"[{phone}] Balance check-এ 401 (unauthorized)। Response: {response.text[:200]}")
+            log("warning", f"[{phone}] Loyalty balance check got 401 (unauthorized). Response: {response.text[:200]}")
             return False, True
         else:
-            log("error", f"[{phone}] ব্যালেন্স আনতে ব্যর্থ। Status: {response.status_code}")
+            log("error", f"[{phone}] Failed to fetch loyalty balance. Status: {response.status_code}")
     except requests.RequestException as e:
-        log("error", f"[{phone}] নেটওয়ার্ক এরর: {e}")
+        log("error", f"[{phone}] Network error: {e}")
     return False, False
 
 
@@ -151,60 +151,96 @@ def claim_daily_points(account):
     payload = "type=daily-check-in"
     headers = get_headers(account["accessToken"], is_urlencoded=True)
 
-    log("info", f"[{phone}] ডেইলি পয়েন্ট ক্লেইমের রিকোয়েস্ট পাঠানো হচ্ছে...")
+    log("info", f"[{phone}] Sending request to claim daily points...")
     try:
         response = requests.post(url, headers=headers, data=payload, timeout=15)
         response_data = response.json() if response.text else {}
 
         if response.status_code in (200, 201) and response_data.get("status") == "success":
             coins = response_data.get("data", {}).get("coinsEarned", 0)
-            log("info", f"[{phone}] সফল! আজকে {coins} পয়েন্ট পাওয়া গেছে।")
+            log("info", f"[{phone}] Success! Earned {coins} points today.")
             return True, False
         elif response.status_code == 400:
-            error_msg = response_data.get("error", {}).get("error", "আজকে ইতিমধ্যে ক্লেইম করা হয়েছে।")
-            log("warning", f"[{phone}] নোটিস: {error_msg}")
+            error_msg = response_data.get("error", {}).get("error", "Already claimed today.")
+            log("warning", f"[{phone}] Notice: {error_msg}")
             return True, False
         elif response.status_code == 401:
-            log("warning", f"[{phone}] Claim-এ 401 (unauthorized)। Response: {response.text[:200]}")
+            log("warning", f"[{phone}] Claim request got 401 (unauthorized). Response: {response.text[:200]}")
             return False, True
         else:
-            log("error", f"[{phone}] ব্যর্থ! Status Code: {response.status_code}")
+            log("error", f"[{phone}] Failed! Status Code: {response.status_code}")
     except requests.RequestException as e:
-        log("error", f"[{phone}] নেটওয়ার্ক এরর: {e}")
+        log("error", f"[{phone}] Network error: {e}")
     return False, False
 
 
 def check_main_balance(account):
-    """
-    Diagnostic ফাংশন: main balance endpoint-এর পুরো raw response দেখায়,
-    যাতে সঠিক field names (mainBalance, dataVolume ইত্যাদি) শনাক্ত করা যায়।
-    ফিল্ড নাম কনফার্ম হওয়ার পর এটাকে ক্লিন আউটপুটে রূপান্তর করা হবে।
-    """
+    """Main balance (Taka), internet data (MB), voice minutes, and their validity."""
     phone = account.get("phone", "Unknown")
     url = "https://myrobi-prod.robi.com.bd/account/api/v1/balance"
 
     try:
         response = requests.get(url, headers=get_headers(account["accessToken"]), timeout=15)
         if response.status_code == 200:
-            try:
-                data = response.json()
-                pretty = json.dumps(data, indent=2, ensure_ascii=False)
-            except ValueError:
-                pretty = response.text
-            log("info", f"[{phone}] Main Balance RAW RESPONSE:\n{pretty}")
+            data = response.json().get("data", {})
+
+            main = data.get("main", {})
+            mb_data = data.get("data", {})
+            voice = data.get("voice", {})
+
+            main_balance = main.get("balance_str", "Unknown")
+            main_unit = main.get("unit", "")
+            main_expiry = main.get("translated_date") or "No expiry info"
+
+            data_balance = mb_data.get("balance_str", "Unknown")
+            data_unit = mb_data.get("unit", "MB")
+            has_unlimited_data = mb_data.get("has_unlimited_data", False)
+            data_expiry = mb_data.get("translated_date")
+
+            voice_balance = voice.get("balance_str", "Unknown")
+            voice_unit = voice.get("unit", "Min")
+            voice_expiry = voice.get("translated_date")
+
+            log("info", f"[{phone}] Main Balance: {main_unit}{main_balance} (Expiry: {main_expiry})")
+
+            if main.get("is_expired"):
+                log("warning", f"[{phone}] ⚠️ Main balance validity has expired!")
+
+            alert = data.get("alert")
+            if alert and alert.get("title"):
+                log("warning", f"[{phone}] Alert: {alert.get('title')}")
+
+            if has_unlimited_data:
+                log("info", f"[{phone}] Internet: Unlimited")
+            else:
+                expiry_text = f" (Expiry: {data_expiry})" if data_expiry else " (No active package)"
+                log("info", f"[{phone}] Internet: {data_balance} {data_unit}{expiry_text}")
+
+            voice_expiry_text = f" (Expiry: {voice_expiry})" if voice_expiry else " (No active package)"
+            log("info", f"[{phone}] Minutes: {voice_balance} {voice_unit}{voice_expiry_text}")
+
+            loan = data.get("loan", {})
+            outstanding_loan = loan.get("outstanding_loan")
+            if outstanding_loan:
+                log("info", f"[{phone}] Outstanding Loan: {outstanding_loan}")
+
+            loan_alert = loan.get("alert")
+            if loan_alert and loan_alert.get("title"):
+                log("warning", f"[{phone}] Loan Alert: {loan_alert.get('title')}")
+
             return True, False
         elif response.status_code == 401:
-            log("warning", f"[{phone}] Main balance-এ 401 (unauthorized)। Response: {response.text[:200]}")
+            log("warning", f"[{phone}] Main balance check got 401 (unauthorized). Response: {response.text[:200]}")
             return False, True
         else:
-            log("error", f"[{phone}] Main balance আনতে ব্যর্থ। Status: {response.status_code} - {response.text[:200]}")
+            log("error", f"[{phone}] Failed to fetch main balance. Status: {response.status_code} - {response.text[:200]}")
     except requests.RequestException as e:
-        log("error", f"[{phone}] নেটওয়ার্ক এরর: {e}")
+        log("error", f"[{phone}] Network error: {e}")
     return False, False
 
 
 def process_account(account):
-    """একটা অ্যাকাউন্টের জন্য claim + balance check, দরকার হলে token refresh সহ।"""
+    """একটা অ্যাকাউন্টের জন্য claim + loyalty balance + main balance, দরকার হলে token refresh সহ।"""
     phone = account.get("phone", "Unknown")
     token_refreshed = False
 
@@ -215,9 +251,9 @@ def process_account(account):
             time.sleep(2)  # refresh-এর পর সাথে সাথে না পাঠিয়ে সামান্য গ্যাপ
             success, needs_refresh = claim_daily_points(account)
             if needs_refresh:
-                log("error", f"[{phone}] Token রিফ্রেশের পরও claim-এ 401 — আরও গভীর সমস্যা থাকতে পারে (token blacklist/account issue), তদন্ত দরকার।")
+                log("error", f"[{phone}] Still getting 401 on claim after token refresh — deeper issue possible (token blacklist/account issue), needs investigation.")
         else:
-            log("error", f"[{phone}] Token রিফ্রেশ ব্যর্থ হয়েছে। এই অ্যাকাউন্ট স্কিপ করা হলো।")
+            log("error", f"[{phone}] Token refresh failed. This account is being skipped.")
             return token_refreshed  # refresh ব্যর্থ হলে এই অ্যাকাউন্টের বাকি কাজ স্কিপ
 
     time.sleep(2)  # claim ও balance check-এর মাঝে সামান্য গ্যাপ
@@ -229,7 +265,7 @@ def process_account(account):
             time.sleep(2)
             success, needs_refresh = get_total_points(account)
             if needs_refresh:
-                log("error", f"[{phone}] Token রিফ্রেশের পরও balance check-এ 401 — আরও গভীর সমস্যা থাকতে পারে (token blacklist/account issue), তদন্ত দরকার।")
+                log("error", f"[{phone}] Still getting 401 on balance check after token refresh — deeper issue possible (token blacklist/account issue), needs investigation.")
 
     time.sleep(2)  # main balance check-এর আগে সামান্য গ্যাপ
 
@@ -246,7 +282,7 @@ def process_account(account):
 def main():
     accounts = load_tokens()
     if not accounts or not isinstance(accounts, list):
-        log("error", "tokens.json ফাইলটি খালি অথবা সঠিক ফরম্যাটে নেই।")
+        log("error", "tokens.json is empty or has an invalid format.")
         send_email_notification("Robi Claim - Failed", "\n".join(log_lines))
         return
 
@@ -254,18 +290,18 @@ def main():
 
     for index, account in enumerate(accounts):
         phone = account.get("phone", f"Account {index + 1}")
-        log("info", f"\n{'=' * 40}\nনাম্বার প্রসেস করা হচ্ছে: {phone}\n{'=' * 40}")
+        log("info", f"\n{'=' * 40}\nProcessing Number: {phone}\n{'=' * 40}")
 
         if index > 0:
             delay_seconds = random.randint(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
-            log("info", f"Rate-Limit Safety Delay: পরবর্তী অ্যাকাউন্টে যাওয়ার আগে {delay_seconds} সেকেন্ড অপেক্ষা করা হচ্ছে...")
+            log("info", f"Rate-Limit Safety Delay: waiting {delay_seconds} seconds before the next account...")
             time.sleep(delay_seconds)
 
         if process_account(account):
             tokens_updated_globally = True
 
     if tokens_updated_globally:
-        log("info", "নতুন token সহ tokens.json আপডেট করা হচ্ছে...")
+        log("info", "Updating tokens.json with new tokens...")
         save_tokens(accounts)
 
     # ফাইনাল রিপোর্ট ইমেইলে পাঠানো
