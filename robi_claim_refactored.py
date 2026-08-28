@@ -240,22 +240,31 @@ def check_main_balance(account):
 
 
 def check_my_offers(account):
-    """
-    Diagnostic ফাংশন: My Offer (packs-for-you) endpoint-এর raw response দেখায়,
-    সঠিক field names শনাক্ত হওয়ার পর ক্লিন আউটপুটে রূপান্তর করা হবে।
-    """
+    """'My Offer' সেকশনের suggested ও additional প্যাকেজগুলো সংক্ষেপে দেখায়।"""
     phone = account.get("phone", "Unknown")
     url = "https://myrobi-prod.robi.com.bd/package/api/v1/packs-for-you"
 
     try:
         response = requests.get(url, headers=get_headers(account["accessToken"]), timeout=15)
         if response.status_code == 200:
-            try:
-                data = response.json()
-                pretty = json.dumps(data, indent=2, ensure_ascii=False)
-            except ValueError:
-                pretty = response.text
-            log("info", f"[{phone}] My Offer RAW RESPONSE:\n{pretty}")
+            data = response.json().get("data", {})
+            suggested = data.get("suggestedForYou") or []
+            additional = data.get("additionalOffers") or []
+            offers = suggested + additional
+
+            if not offers:
+                log("info", f"[{phone}] My Offer: No package offers found right now.")
+                return True, False
+
+            log("info", f"[{phone}] My Offer: {len(offers)} package(s) available")
+            for pack in offers:
+                title = pack.get("title", "Unknown Package")
+                price = pack.get("price", {}).get("total_price", "N/A")
+                validity = pack.get("validity", {})
+                validity_str = f"{validity.get('validity', '?')} {validity.get('validity_unit', '')}".strip()
+
+                log("info", f"  - {title} | Price: Tk.{price} | Validity: {validity_str}")
+
             return True, False
         elif response.status_code == 401:
             log("warning", f"[{phone}] My Offer check got 401 (unauthorized). Response: {response.text[:200]}")
@@ -267,7 +276,33 @@ def check_my_offers(account):
     return False, False
 
 
-def process_account(account):
+def probe_catalog_endpoints(account):
+    """
+    Diagnostic: সম্ভাব্য কয়েকটা 'সব প্যাকেজ / catalog' endpoint টেস্ট করে
+    কোনটা বৈধ (200) সেটা রিপোর্ট করে। শুধু একবার, প্রথম অ্যাকাউন্টের জন্য চলবে।
+    """
+    phone = account.get("phone", "Unknown")
+    candidate_paths = [
+        "/package/api/v1/catalog",
+        "/package/api/v1/all-packs",
+        "/package/api/v1/packages",
+        "/package/api/v1/package-list",
+        "/package/api/v1/internet-packs",
+        "/package/api/v1/data-packs",
+        "/package/api/v1/categories",
+    ]
+    headers = get_headers(account["accessToken"])
+
+    log("info", f"[{phone}] Probing possible catalog endpoints...")
+    for path in candidate_paths:
+        url = f"https://myrobi-prod.robi.com.bd{path}"
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            log("info", f"  GET {path} -> {response.status_code}")
+            if response.status_code == 200:
+                log("info", f"    Possible match! Response preview: {response.text[:300]}")
+        except requests.RequestException as e:
+            log("info", f"  GET {path} -> network error: {e}")
     """একটা অ্যাকাউন্টের জন্য claim + loyalty balance + main balance, দরকার হলে token refresh সহ।"""
     phone = account.get("phone", "Unknown")
     token_refreshed = False
