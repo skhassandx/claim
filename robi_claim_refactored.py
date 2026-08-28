@@ -8,8 +8,8 @@ import smtplib
 from email.mime.text import MIMEText
 
 TOKEN_FILE = "tokens.json"
-MIN_DELAY_SECONDS = 5   # accounts-এর মাঝে ন্যূনতম গ্যাপ
-MAX_DELAY_SECONDS = 60  # নেটওয়ার্ক স্পিড ভ্যারিয়েশন ও rate-limit এড়াতে সর্বোচ্চ গ্যাপ
+MIN_DELAY_SECONDS = 5   
+MAX_DELAY_SECONDS = 60  
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,9 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ইমেইল রিপোর্টের জন্য সব লগ লাইন এখানে জমা হবে
 log_lines = []
-
 
 def log(level, message):
     """একইসাথে logger-এ প্রিন্ট করে এবং ইমেইল রিপোর্টের জন্য জমা রাখে।"""
@@ -31,7 +29,7 @@ def log(level, message):
 def send_email_notification(subject, body):
     email_user = os.environ.get("EMAIL_USER")
     email_pass = os.environ.get("EMAIL_PASS")
-    email_to = os.environ.get("EMAIL_TO", email_user)  # EMAIL_TO না থাকলে নিজেকেই পাঠাবে
+    email_to = os.environ.get("EMAIL_TO", email_user)  
 
     if not email_user or not email_pass:
         logger.warning("EMAIL_USER / EMAIL_PASS not set. Skipping email notification.")
@@ -175,7 +173,6 @@ def claim_daily_points(account):
 
 
 def check_main_balance(account):
-    """Main balance (Taka), internet data (MB), voice minutes, and their validity."""
     phone = account.get("phone", "Unknown")
     url = "https://myrobi-prod.robi.com.bd/account/api/v1/balance"
 
@@ -240,7 +237,6 @@ def check_main_balance(account):
 
 
 def check_my_offers(account):
-    """'My Offer' সেকশনের suggested ও additional প্যাকেজগুলো সংক্ষেপে দেখায়।"""
     phone = account.get("phone", "Unknown")
     url = "https://myrobi-prod.robi.com.bd/package/api/v1/packs-for-you"
 
@@ -277,10 +273,6 @@ def check_my_offers(account):
 
 
 def probe_catalog_endpoints(account):
-    """
-    Diagnostic: সম্ভাব্য কয়েকটা 'সব প্যাকেজ / catalog' endpoint টেস্ট করে
-    কোনটা বৈধ (200) সেটা রিপোর্ট করে। শুধু একবার, প্রথম অ্যাকাউন্টের জন্য চলবে।
-    """
     phone = account.get("phone", "Unknown")
     candidate_paths = [
         "/package/api/v1/catalog",
@@ -303,6 +295,9 @@ def probe_catalog_endpoints(account):
                 log("info", f"    Possible match! Response preview: {response.text[:300]}")
         except requests.RequestException as e:
             log("info", f"  GET {path} -> network error: {e}")
+
+
+def process_account(account):
     """একটা অ্যাকাউন্টের জন্য claim + loyalty balance + main balance, দরকার হলে token refresh সহ।"""
     phone = account.get("phone", "Unknown")
     token_refreshed = False
@@ -311,15 +306,15 @@ def probe_catalog_endpoints(account):
     if needs_refresh:
         if refresh_access_token(account):
             token_refreshed = True
-            time.sleep(2)  # refresh-এর পর সাথে সাথে না পাঠিয়ে সামান্য গ্যাপ
+            time.sleep(2)  
             success, needs_refresh = claim_daily_points(account)
             if needs_refresh:
-                log("error", f"[{phone}] Still getting 401 on claim after token refresh — deeper issue possible (token blacklist/account issue), needs investigation.")
+                log("error", f"[{phone}] Still getting 401 on claim after token refresh — deeper issue possible.")
         else:
             log("error", f"[{phone}] Token refresh failed. This account is being skipped.")
-            return token_refreshed  # refresh ব্যর্থ হলে এই অ্যাকাউন্টের বাকি কাজ স্কিপ
+            return token_refreshed  
 
-    time.sleep(2)  # claim ও balance check-এর মাঝে সামান্য গ্যাপ
+    time.sleep(2)  
 
     success, needs_refresh = get_total_points(account)
     if needs_refresh:
@@ -328,9 +323,9 @@ def probe_catalog_endpoints(account):
             time.sleep(2)
             success, needs_refresh = get_total_points(account)
             if needs_refresh:
-                log("error", f"[{phone}] Still getting 401 on balance check after token refresh — deeper issue possible (token blacklist/account issue), needs investigation.")
+                log("error", f"[{phone}] Still getting 401 on balance check after token refresh.")
 
-    time.sleep(2)  # main balance check-এর আগে সামান্য গ্যাপ
+    time.sleep(2)  
 
     success, needs_refresh = check_main_balance(account)
     if needs_refresh:
@@ -339,7 +334,7 @@ def probe_catalog_endpoints(account):
             time.sleep(2)
             check_main_balance(account)
 
-    time.sleep(2)  # My Offer check-এর আগে সামান্য গ্যাপ
+    time.sleep(2)  
 
     success, needs_refresh = check_my_offers(account)
     if needs_refresh:
@@ -376,7 +371,6 @@ def main():
         log("info", "Updating tokens.json with new tokens...")
         save_tokens(accounts)
 
-    # ফাইনাল রিপোর্ট ইমেইলে পাঠানো
     send_email_notification("Robi Daily Point Claim - Report", "\n".join(log_lines))
 
 
