@@ -239,6 +239,34 @@ def check_main_balance(account):
     return False, False
 
 
+def check_my_offers(account):
+    """
+    Diagnostic ফাংশন: My Offer (packs-for-you) endpoint-এর raw response দেখায়,
+    সঠিক field names শনাক্ত হওয়ার পর ক্লিন আউটপুটে রূপান্তর করা হবে।
+    """
+    phone = account.get("phone", "Unknown")
+    url = "https://myrobi-prod.robi.com.bd/package/api/v1/packs-for-you"
+
+    try:
+        response = requests.get(url, headers=get_headers(account["accessToken"]), timeout=15)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                pretty = json.dumps(data, indent=2, ensure_ascii=False)
+            except ValueError:
+                pretty = response.text
+            log("info", f"[{phone}] My Offer RAW RESPONSE:\n{pretty}")
+            return True, False
+        elif response.status_code == 401:
+            log("warning", f"[{phone}] My Offer check got 401 (unauthorized). Response: {response.text[:200]}")
+            return False, True
+        else:
+            log("error", f"[{phone}] Failed to fetch My Offer. Status: {response.status_code} - {response.text[:200]}")
+    except requests.RequestException as e:
+        log("error", f"[{phone}] Network error: {e}")
+    return False, False
+
+
 def process_account(account):
     """একটা অ্যাকাউন্টের জন্য claim + loyalty balance + main balance, দরকার হলে token refresh সহ।"""
     phone = account.get("phone", "Unknown")
@@ -275,6 +303,15 @@ def process_account(account):
             token_refreshed = True
             time.sleep(2)
             check_main_balance(account)
+
+    time.sleep(2)  # My Offer check-এর আগে সামান্য গ্যাপ
+
+    success, needs_refresh = check_my_offers(account)
+    if needs_refresh:
+        if refresh_access_token(account):
+            token_refreshed = True
+            time.sleep(2)
+            check_my_offers(account)
 
     return token_refreshed
 
